@@ -321,6 +321,41 @@ p { margin: 0; }
 .mgroup:first-of-type { margin-top: 2px; }
 .hist .wval { display: inline-flex; align-items: center; gap: 2px; font-variant-numeric: tabular-nums; }
 
+/* ---------- repères & à éviter ---------- */
+.reps { display: flex; gap: 8px; }
+.rep {
+  flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  padding: 12px 6px; min-height: 86px; border-radius: 14px; background: var(--cream);
+  border: 1px solid var(--line); font-size: 11.5px; color: var(--ink-soft); text-align: center; line-height: 1.25;
+  transition: background .18s, border-color .18s, color .18s;
+}
+.rep .ri { font-size: 20px; line-height: 1; }
+.rep.on { background: var(--sage-soft); border-color: var(--sage); color: var(--ink); font-weight: 620; }
+.rep:active { transform: scale(.97); }
+
+.avoid-row { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.avoid-row:last-of-type { border-bottom: 0; }
+.av-ico { font-size: 18px; width: 26px; text-align: center; flex: 0 0 auto; }
+.av-body { flex: 1 1 auto; min-width: 0; }
+.av-nom { font-size: 14px; font-weight: 600; line-height: 1.25; }
+.av-sub { font-size: 11.5px; color: var(--ink-soft); }
+.avoid-row.over .av-sub { color: var(--amber); }
+.av-add {
+  flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%; background: var(--accent-soft);
+  color: var(--accent); font-size: 19px; display: grid; place-items: center; font-weight: 500;
+}
+.av-add:active { transform: scale(.94); }
+.av-undo {
+  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; background: var(--cream);
+  border: 1px solid var(--line); color: var(--ink-soft); font-size: 13px; display: grid; place-items: center;
+}
+.tol { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.tol button {
+  width: 26px; height: 26px; border-radius: 50%; background: var(--cream); border: 1px solid var(--line);
+  font-size: 14px; line-height: 1; display: grid; place-items: center; color: var(--ink-soft);
+}
+.tol span { min-width: 16px; text-align: center; font-size: 13px; font-weight: 650; }
+
 </style>
 </head>
 <body>
@@ -542,7 +577,7 @@ window.FOODS = [
       profile: {
         prenom: "", sexe: "f", age: 30, taille: 165, poids: 70, cible: 65,
         activite: "leger", objKcal: 0, prot: 0, gluc: 0, lip: 0,
-        onboarding: false
+        onboarding: false, mode: "attention"
       },
       customFoods: [],
       meals: [],
@@ -550,6 +585,15 @@ window.FOODS = [
       water: [],
       favs: [],
       streak: { last: null, days: 0 },
+      interdits: [
+        { id: "soda", nom: "Sodas & boissons sucrées", emoji: "🥤", max: 1 },
+        { id: "sucrerie", nom: "Sucreries, gâteaux, chocolat", emoji: "🍫", max: 2 },
+        { id: "friture", nom: "Fritures & fast-food", emoji: "🍟", max: 1 },
+        { id: "pain-blanc", nom: "Pain blanc & viennoiseries", emoji: "🥐", max: 2 },
+        { id: "alcool", nom: "Alcool", emoji: "🍷", max: 0 }
+      ],
+      ecarts: [],
+      reperes: {},
       settings: { theme: "auto", modeSimple: false, lastExport: null },
       meta: { creeLe: new Date().toISOString() }
     };
@@ -564,9 +608,12 @@ window.FOODS = [
       base.profile = Object.assign(base.profile, s.profile || {});
       base.settings = Object.assign(base.settings, s.settings || {});
       base.streak = Object.assign(base.streak, s.streak || {});
-      ["customFoods", "meals", "weights", "water", "favs"].forEach(function (k) {
+      ["customFoods", "meals", "weights", "water", "favs", "interdits", "ecarts"].forEach(function (k) {
         if (Array.isArray(s[k])) base[k] = s[k];
       });
+      if (s.reperes && typeof s.reperes === "object") base.reperes = s.reperes;
+      if (!base.profile.mode) base.profile.mode = (s.settings && s.settings.modeSimple) ? "simple" : "attention";
+      if (!base.interdits.length) base.interdits = defaults().interdits;
       return base;
     } catch (e) { return base; }
   }
@@ -574,6 +621,45 @@ window.FOODS = [
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(S)); }
     catch (e) { toast("Stockage plein — pense à exporter ta sauvegarde"); }
+  }
+
+  /* ---------------- mode, repères, à éviter ---------------- */
+  var NIVE = {
+    leger: { ico: "🌿", nom: "Léger" },
+    normal: { ico: "🙂", nom: "Normal" },
+    genereux: { ico: "🍰", nom: "Généreux" }
+  };
+
+  function mode() { return S.profile.mode || "attention"; }
+  function isCalories() { return mode() === "calories"; }
+  function repFor(date) { return S.reperes[date] || {}; }
+  function toggleRep(date, key) {
+    var r = S.reperes[date] || (S.reperes[date] = {});
+    r[key] = !r[key];
+    save();
+  }
+  function ecartsLastDays(n) {
+    var lim = addDays(todayKey(), -(n - 1));
+    return S.ecarts.filter(function (e) { return e.date >= lim; });
+  }
+  function ecartsOf(ref, n) {
+    var lim = addDays(todayKey(), -((n || 7) - 1));
+    return S.ecarts.filter(function (e) { return e.ref === ref && e.date >= lim; });
+  }
+  function ecartsWeekTotal() {
+    var lim = addDays(todayKey(), -6);
+    return S.ecarts.filter(function (e) { return e.date >= lim; });
+  }
+  function tolSum() {
+    return S.interdits.reduce(function (a, i) { return a + (+i.max || 0); }, 0);
+  }
+  function addEcart(nom, ref) {
+    S.ecarts.push({ id: uid(), date: todayKey(), nom: nom, ref: ref || null });
+    save();
+  }
+  function interditByRef(ref) {
+    var f = S.interdits.filter(function (i) { return i.id === ref; });
+    return f.length ? f[0] : null;
   }
 
   /* ---------------- aliments ---------------- */
@@ -752,6 +838,7 @@ window.FOODS = [
       '<p class="kcal" id="ob-kcal">' + t.obj + ' <span>kcal / jour</span></p>' +
       '<p class="sub" id="ob-sub">soit environ ' + rate + ' kg par semaine, sans te mettre à la diète' +
       (weeks ? ' · cap sur ton poids visé dans ~' + weeks + ' semaines' : '') + '</p>' +
+      '<p class="sub" style="margin-top:6px">Pas besoin de compter : tu pourras suivre au quotidien, sans calories.</p>' +
       '</div>' +
 
       '<button class="btn" data-act="start">Commencer</button>' +
@@ -827,6 +914,26 @@ window.FOODS = [
     return { ico: "🌿", txt: "Il te reste de la marge, pas besoin de te priver.", warm: false };
   }
 
+  function attentionMessage(noted, reps, ecarts) {
+    if (!noted) return { ico: "🌱", txt: "Rien de noté aujourd'hui. Une ligne suffit pour commencer.", warm: false };
+    if (ecarts > tolSum()) return { ico: "🤍", txt: "Un peu au-dessus de ta limite cette semaine — rien d'irréversible.", warm: true };
+    if (reps === 3) return { ico: "✨", txt: "Trois repères cochés : journée bien équilibrée.", warm: false };
+    if (noted === 4) return { ico: "🌿", txt: "Tous tes repas sont notés — c'est ça, la régularité qui compte.", warm: false };
+    return { ico: "🌿", txt: "Tu fais attention, c'est déjà l'essentiel.", warm: false };
+  }
+
+  function avoidMessage(total, tol) {
+    if (!total) return "Aucun écart cette semaine. Pas besoin d'être parfait, juste attentif.";
+    if (total <= tol) return "Tu restes dans ta limite : c'est exactement l'idée. Rien à te reprocher.";
+    return "Un peu au-dessus de ta limite cette semaine. Ça n'annule rien — on repart au prochain repas.";
+  }
+
+  function repTile(k, ico, label) {
+    var on = repFor(todayKey())[k];
+    return '<button class="rep' + (on ? " on" : "") + '" data-act="rep" data-k="' + k + '">' +
+      '<span class="ri">' + ico + '</span><span class="rl">' + label + '</span></button>';
+  }
+
   function viewHome() {
     var d = todayKey();
     var tot = totalsFor(d);
@@ -837,15 +944,29 @@ window.FOODS = [
     var C = 2 * Math.PI * 56;
     var st = streakNow();
     var p = S.profile;
-    var msg = dayMessage(rest, obj, tot);
-    var simple = !!S.settings.modeSimple;
+    var cal = isCalories();
     var notedMeals = MOMENTS.filter(function (m) { return itemsFor(d, m.id).length > 0; }).length;
+    var rep = repFor(d);
+    var repCount = ["leg", "prot", "sanssucre"].filter(function (k) { return rep[k]; }).length;
+    var weekEc = ecartsWeekTotal();
+    var msg = cal ? dayMessage(rest, obj, tot) : attentionMessage(notedMeals, repCount, weekEc.length);
 
-    var ringCenter = simple
-      ? '<span class="big">' + notedMeals + '/4</span><span class="lbl">repas notés</span>'
-      : '<span class="big">' + (rest >= 0 ? rest : "0") + '</span><span class="lbl">' + (rest >= 0 ? "kcal restantes" : "objectif atteint") + '</span>';
-
-    var protoPct = Math.min(1, tot.p / Math.max(1, pro));
+    var ringCenter, ringStats;
+    if (cal) {
+      ringCenter = '<span class="big">' + (rest >= 0 ? rest : "0") + '</span><span class="lbl">' + (rest >= 0 ? "kcal restantes" : "objectif atteint") + '</span>';
+      var protoPct = Math.min(1, tot.p / Math.max(1, pro));
+      ringStats =
+        '<div class="stat-line"><span>Consommé</span><b>' + tot.k + ' kcal</b></div>' +
+        '<div class="stat-line"><span>Objectif</span><b>' + obj + ' kcal</b></div>' +
+        '<div class="macro"><div class="track"><div class="fill" style="width:' + (protoPct * 100).toFixed(0) + '%"></div></div>' +
+        '<div class="mini"><span>Protéines</span><span>' + fr(tot.p) + ' / ' + pro + ' g</span></div></div>';
+    } else {
+      ringCenter = '<span class="big">' + notedMeals + '/4</span><span class="lbl">repas notés</span>';
+      ringStats =
+        '<div class="stat-line"><span>Repas notés</span><b>' + notedMeals + ' / 4</b></div>' +
+        '<div class="stat-line"><span>Repères</span><b>' + repCount + ' / 3</b></div>' +
+        '<div class="stat-line"><span>Écarts</span><b>' + weekEc.length + ' / ' + tolSum() + '</b></div>';
+    }
 
     var h = '' +
       '<div class="top">' +
@@ -854,46 +975,72 @@ window.FOODS = [
       (st > 0 ? '<div class="chip" style="pointer-events:none">🔥 ' + st + ' j</div>' : '') +
       '</div>' +
 
-      '<div class="card">' +
-      '<div class="ring-wrap">' +
+      '<div class="card"><div class="ring-wrap">' +
       '<div class="ring"><svg width="132" height="132" viewBox="0 0 132 132" aria-hidden="true">' +
       '<circle cx="66" cy="66" r="56" fill="none" stroke="var(--line)" stroke-width="11"/>' +
       '<circle cx="66" cy="66" r="56" fill="none" stroke="var(--accent)" stroke-width="11" stroke-linecap="round" ' +
-      'stroke-dasharray="' + C.toFixed(1) + '" stroke-dashoffset="' + (C * (1 - pct)).toFixed(1) + '"/>' +
+      'stroke-dasharray="' + C.toFixed(1) + '" stroke-dashoffset="' + (C * (1 - (cal ? pct : notedMeals / 4))).toFixed(1) + '"/>' +
       '</svg><div class="center">' + ringCenter + '</div></div>' +
-      '<div class="ring-stats">' +
-      '<div class="stat-line"><span>Consommé</span><b>' + (simple ? "—" : tot.k + " kcal") + '</b></div>' +
-      '<div class="stat-line"><span>Objectif</span><b>' + (simple ? "—" : obj + " kcal") + '</b></div>' +
-      '<div class="macro"><div class="track"><div class="fill" style="width:' + (protoPct * 100).toFixed(0) + '%"></div></div>' +
-      '<div class="mini"><span>Protéines</span><span>' + fr(tot.p) + ' / ' + pro + ' g</span></div></div>' +
-      '</div></div></div>' +
+      '<div class="ring-stats">' + ringStats + '</div></div></div>' +
 
       '<div class="note-bar' + (msg.warm ? " warm" : "") + '"><span class="ico">' + msg.ico + '</span><span>' + msg.txt + '</span></div>';
 
+    /* ---- mes repas ---- */
     h += '<div class="card" style="padding:14px 18px 6px">' +
       '<div class="card-t"><h3>Mes repas</h3>' +
-        '<button class="more" data-act="openAdd" data-moment="' + guessMoment() + '">' + notedMeals + '/4 · ajouter +</button></div>';
+      '<button class="more" data-act="openAdd" data-moment="' + guessMoment() + '">' + notedMeals + '/4 · ajouter +</button></div>';
     MOMENTS.forEach(function (m) {
       var items = itemsFor(d, m.id);
       var k = items.reduce(function (a, x) { return a + (x.it.k || 0); }, 0);
       var detail = items.length
-        ? items.map(function (x) { return esc(x.it.nom); }).join(" · ")
+        ? items.map(function (x) {
+            return (x.it.ecart ? "🚫 " : "") + esc(x.it.nom);
+          }).join(" · ")
         : "Rien pour l'instant";
       h += '<div class="meal">' +
         '<div class="meal-ico">' + m.ico + '</div>' +
         '<div class="meal-body"><div class="meal-name"><span>' + m.nom + '</span>' +
-        '<span class="kcal">' + (items.length ? (simple ? "noté ✓" : r0(k) + " kcal") : "") + '</span></div>' +
+        '<span class="kcal">' + (items.length ? (cal && k > 0 ? r0(k) + " kcal" : "noté ✓") : "") + '</span></div>' +
         '<div class="meal-items">' + detail +
         (items.length ? ' <button class="link-mini" data-act="clearMeal" data-moment="' + m.id + '" aria-label="Retirer ce repas">✕</button>' : '') +
-        '</div>' +
-        '</div>' +
+        '</div></div>' +
         '<button class="meal-add" data-act="openAdd" data-moment="' + m.id + '" aria-label="Ajouter à ' + m.nom + '">+</button>' +
         '</div>';
     });
     h += '</div>';
 
+    /* ---- repères ---- */
+    h += '<div class="card"><div class="card-t"><h3>Mes repères du jour</h3><span class="more">' + repCount + '/3</span></div>' +
+      '<div class="reps">' +
+      repTile("leg", "🥗", "Légumes") +
+      repTile("prot", "🍗", "Protéines") +
+      repTile("sanssucre", "🥤", "Sans boisson sucrée") +
+      '</div>' +
+      '<p class="disclaimer" style="text-align:left;padding-top:10px">Trois repères simples valent mieux qu\'un calcul compliqué. Tu coches ce que tu as fait, sans pression.</p></div>';
+
+    /* ---- à éviter ---- */
+    h += '<div class="card"><div class="card-t"><h3>À éviter</h3>' +
+      '<span class="more">' + weekEc.length + ' cette semaine · limite ' + tolSum() + '</span></div>';
+    if (!S.interdits.length) {
+      h += '<p class="empty">Ajoute ce que tu veux éviter dans les réglages.</p>';
+    } else {
+      S.interdits.forEach(function (it) {
+        var n = ecartsOf(it.id, 7).length;
+        var over = n > (+it.max || 0);
+        h += '<div class="avoid-row' + (over ? " over" : "") + '">' +
+          '<span class="av-ico">' + it.emoji + '</span>' +
+          '<div class="av-body"><p class="av-nom">' + esc(it.nom) + '</p>' +
+          '<p class="av-sub">' + (n === 0 ? "aucun" : n + " fois") + ' cette semaine · limite ' +
+          (+it.max === 0 ? "0 (jamais)" : it.max) + '</p></div>' +
+          (n > 0 ? '<button class="av-undo" data-act="undoEcart" data-id="' + it.id + '" aria-label="Annuler le dernier">↺</button>' : '') +
+          '<button class="av-add" data-act="ecart" data-id="' + it.id + '">+</button></div>';
+      });
+    }
+    h += '<p class="disclaimer" style="text-align:left;padding-top:10px">' + avoidMessage(weekEc.length, tolSum()) + '</p></div>';
+
+    /* ---- eau ---- */
     var verres = waterFor(d);
-    h += '<div class="card"><div class="card-t"><h3>Eau</h3><span class="more">' + r1(verres * 0.2) + ' L / 1,6 L</span></div>' +
+    h += '<div class="card"><div class="card-t"><h3>Eau</h3><span class="more">' + fr(r1(verres * 0.2)) + ' L / 1,6 L</span></div>' +
       '<div class="drops">' + Array.from({ length: 8 }).map(function (_, i) {
         return '<button class="drop' + (i < verres ? " on" : "") + '" data-act="water" data-i="' + i + '" aria-label="verre ' + (i + 1) + '">' +
           '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M12 2.3c3.4 4 6 7.4 6 10.2a6 6 0 0 1-12 0c0-2.8 2.6-6.2 6-10.2z"/></svg></button>';
@@ -919,10 +1066,34 @@ window.FOODS = [
      ============================================================ */
   var sheet = null;
 
-  function openAdd(moment) {
+  function openAdd(moment, tab) {
     toastEl.classList.remove("on");
-    sheet = { moment: moment || guessMoment(), tab: "search", q: "", pick: null, qty: 1, pIdx: 0 };
+    sheet = {
+      moment: moment || guessMoment(), tab: tab || "note", q: "", pick: null, qty: 1, pIdx: 0,
+      niv: "normal", ecart: false, dpays: null
+    };
     renderSheet(true);
+  }
+
+  /* mots-clés pour reconnaître un « à éviter » dans une saisie libre */
+  var MOTS = {
+    soda: ["soda", "coca", "pepsi", "sprite", "fanta", "sucrée", "sucre", "jus", "red bull", "energisant", "monster"],
+    sucrerie: ["gateau", "gâteau", "chocolat", "bonbon", "glace", "dessert", "patisserie", "pâtisserie", "cookie", "biscuit", "nutella", "miel", "confiture"],
+    friture: ["frite", "friture", "burger", "tacos", "pizza", "shawarma", "nuggets", "kfc", "mcdo", "beignet", "samoussa"],
+    "pain-blanc": ["pain blanc", "baguette", "viennoiserie", "croissant", "pain au chocolat", "brioche", "msemen", "harcha", "baghrir", "batbout"],
+    alcool: ["biere", "bière", "vin", "alcool", "whisky", "vodka", "cocktail"]
+  };
+
+  function detectInterdit(txt) {
+    var t = norm(txt);
+    var found = null;
+    S.interdits.forEach(function (it) {
+      var mots = MOTS[it.id] || [norm(it.nom)];
+      if (mots.some(function (w) { return t.indexOf(norm(w)) >= 0; })) {
+        if (!found) found = it;
+      }
+    });
+    return found;
   }
 
   function closeSheet() {
@@ -932,6 +1103,7 @@ window.FOODS = [
     if (sh) sh.classList.remove("on");
     setTimeout(function () { sheetRoot.innerHTML = ""; }, 260);
     sheet = null;
+    if (S.profile.onboarding) render();
   }
 
   function renderSheet(withAnim) {
@@ -955,28 +1127,85 @@ window.FOODS = [
     if (!inner) return;
     var mom = MOMENTS.filter(function (m) { return m.id === sheet.moment; })[0] || MOMENTS[0];
 
-    if (sheet.pick) { inner.innerHTML = sheetDetailHTML(mom); bindSheetDetail(); return; }
+    if (sheet.pick) { inner.innerHTML = sheetDetailHTML(mom); return; }
 
-    inner.innerHTML = '' +
-      '<div class="sheet-head"><div class="grab"></div>' +
+    var tabs = [["note", "✍️ Noter"], ["search", "🔍 Aliments"], ["recent", "🕐 Récents"], ["favs", "⭐ Favoris"]];
+
+    var head = '<div class="sheet-head"><div class="grab"></div>' +
       '<div class="ht"><h3>Ajouter au ' + mom.short.toLowerCase() + '</h3><button class="x" data-act="closeSheet">✕</button></div>' +
       '<div class="chips">' + MOMENTS.map(function (m) {
         return '<button class="chip' + (m.id === sheet.moment ? " on" : "") + '" data-act="sheetMoment" data-moment="' + m.id + '">' + m.ico + ' ' + m.short + '</button>';
       }).join("") + '</div>' +
-      '<div class="chips">' + [["search", "🔍 Rechercher"], ["recent", "🕐 Récents"], ["favs", "⭐ Favoris"], ["quick", "⚡ Saisie rapide"]]
-        .map(function (t) {
-          return '<button class="chip' + (sheet.tab === t[0] ? " on" : "") + '" data-act="sheetTab" data-tab="' + t[0] + '">' + t[1] + '</button>';
-        }).join("") + '</div>' +
-      (sheet.tab === "search" ? '<input class="input" id="food-q" type="search" placeholder="Chercher un aliment…" autocomplete="off" value="' + esc(sheet.q) + '">' : "") +
-      '</div>' +
-      '<div class="sheet-body"><div id="food-list"></div></div>';
+      '<div class="chips">' + tabs.map(function (t) {
+        return '<button class="chip' + (sheet.tab === t[0] ? " on" : "") + '" data-act="sheetTab" data-tab="' + t[0] + '">' + t[1] + '</button>';
+      }).join("") + '</div>' +
+      (sheet.tab === "search" ? '<input class="input" id="food-q" type="search" placeholder="Chercher dans les aliments…" autocomplete="off" value="' + esc(sheet.q) + '">' : "") +
+      '</div>';
 
-    renderFoodList();
+    var body = sheet.tab === "note" ? noteFormHTML() : '<div id="food-list"></div>';
+    inner.innerHTML = head + '<div class="sheet-body">' + body + '</div>';
+
+    if (sheet.tab === "note") bindNoteForm();
+    else renderFoodList();
 
     var inp = document.getElementById("food-q");
+    if (inp) inp.addEventListener("input", function () { sheet.q = inp.value; renderFoodList(); });
+  }
+
+  function noteFormHTML() {
+    return '' +
+      '<p class="sub" style="margin:14px 0 6px">Qu\'est-ce que tu as mangé ?</p>' +
+      '<input class="input" id="note-nom" type="text" placeholder="Ex. tajine de poulet, une part de msemen…" autocomplete="off" enterkeyhint="done">' +
+      '<p class="sub" style="margin:16px 0 8px">C\'était comment ?</p>' +
+      '<div class="seg" id="note-niv">' +
+      '<button data-v="leger" class="' + (sheet.niv === "leger" ? "on" : "") + '">🌿 Léger</button>' +
+      '<button data-v="normal" class="' + (sheet.niv === "normal" ? "on" : "") + '">🙂 Normal</button>' +
+      '<button data-v="genereux" class="' + (sheet.niv === "genereux" ? "on" : "") + '">🍰 Généreux</button>' +
+      '</div>' +
+      '<button class="chip" id="note-ecart" data-act="toggleEcart" style="margin-top:14px' + (sheet.ecart ? ";background:var(--accent-soft);border-color:var(--accent);color:var(--ink)" : "") + '">' +
+      (sheet.ecart ? "✓ Compté comme un écart" : "Compter comme un écart") + '</button>' +
+      '<p class="sub" id="note-hint" style="margin-top:6px">' + (sheet.dpays ? "Reconnu dans « " + esc(sheet.dpays) + " »" : "Optionnel — coche si ça fait partie de ce que tu veux éviter.") + '</p>' +
+      (isCalories() ? '<div class="field" style="margin-top:16px"><label for="note-kcal">Calories (facultatif)</label>' +
+        '<input class="input" id="note-kcal" type="number" inputmode="numeric" placeholder="Ex. 450"></div>' : '') +
+      '<button class="btn" style="margin-top:18px" data-act="saveNote">Ajouter</button>' +
+      '<p class="disclaimer" style="padding-top:14px">Tu écris avec tes mots : pas besoin de choisir dans une liste ni de peser.</p>';
+  }
+
+  function bindNoteForm() {
+    var seg = document.getElementById("note-niv");
+    if (seg) seg.addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-v]");
+      if (!b) return;
+      sheet.niv = b.dataset.v;
+      Array.prototype.forEach.call(seg.children, function (c) { c.classList.toggle("on", c === b); });
+    });
+    var inp = document.getElementById("note-nom");
     if (inp) {
-      inp.addEventListener("input", function () { sheet.q = inp.value; renderFoodList(); });
+      inp.addEventListener("input", function () {
+        var it = detectInterdit(inp.value);
+        sheet.dpays = it ? it.nom : null;
+        if (it && !sheet.ecartManuel) { sheet.ecart = true; }
+        if (!it && !sheet.ecartManuel) { sheet.ecart = false; }
+        var chip = document.getElementById("note-ecart");
+        var hint = document.getElementById("note-hint");
+        if (chip) {
+          chip.textContent = sheet.ecart ? "✓ Compté comme un écart" : "Compter comme un écart";
+          chip.style.background = sheet.ecart ? "var(--accent-soft)" : "";
+          chip.style.borderColor = sheet.ecart ? "var(--accent)" : "";
+          chip.style.color = sheet.ecart ? "var(--ink)" : "";
+        }
+        if (hint) hint.textContent = sheet.dpays ? "Reconnu dans « " + sheet.dpays + " »" : "Optionnel — coche si ça fait partie de ce que tu veux éviter.";
+      });
+      setTimeout(function () { try { inp.focus(); } catch (e) { } }, 220);
     }
+  }
+
+  function addFree(nom, niv, isEcart, kcal, ref) {
+    if (isEcart) addEcart(nom, ref || null);
+    addItem(sheet.moment, {
+      fid: null, nom: nom, portion: (NIVE[niv] || NIVE.normal).nom,
+      niv: niv, ecart: !!isEcart, k: kcal || 0, p: 0, g: 0, l: 0
+    });
   }
 
   function norm(s) {
@@ -1002,17 +1231,6 @@ window.FOODS = [
     var list = document.getElementById("food-list");
     if (!list) return;
     var html = "";
-
-    if (sheet.tab === "quick") {
-      html = '<div class="field" style="margin-top:6px"><label>Nom du repas</label>' +
-        '<input class="input" id="q-nom" type="text" placeholder="Ex. déjeuner au restaurant"></div>' +
-        '<div class="field"><label>Calories estimées</label>' +
-        '<input class="input" id="q-kcal" type="number" inputmode="numeric" placeholder="Ex. 600"></div>' +
-        '<button class="btn" data-act="saveQuick">Enregistrer</button>' +
-        '<p class="empty" style="padding-top:16px">Une estimation vaut toujours mieux qu\'un oubli.</p>';
-      list.innerHTML = html;
-      return;
-    }
 
     if (sheet.tab === "recent") {
       var rec = recentFoods();
@@ -1111,11 +1329,19 @@ window.FOODS = [
     S.meals.push({ id: uid(), date: d, moment: moment, items: [item], ts: Date.now() });
     touchStreak(d);
     save();
-    var tot = totalsFor(d), rest = targetKcal() - tot.k;
     render();
-    if (rest > 0) toast("Noté ! Il te reste ~" + rest + " kcal");
-    else toast("Noté. Journée un peu plus généreuse 🌱");
-    if (sheet) { sheet.pick = null; sheet.qty = 1; sheet.pIdx = 0; renderSheetInner(); }
+    if (!isCalories()) {
+      toast(item.ecart ? "Noté — un écart ne défait pas ta semaine 🌱" : "Noté ✓");
+    } else {
+      var rest = targetKcal() - totalsFor(d).k;
+      if (rest > 0) toast("Noté ! Il te reste ~" + rest + " kcal");
+      else toast("Noté. Journée un peu plus généreuse 🌱");
+    }
+    if (sheet) {
+      sheet.pick = null; sheet.qty = 1; sheet.pIdx = 0;
+      sheet.ecart = false; sheet.ecartManuel = false; sheet.dpays = null;
+      renderSheetInner();
+    }
   }
 
   /* ============================================================
@@ -1294,6 +1520,25 @@ window.FOODS = [
     }
     h += '</div>';
 
+    /* ---- cette semaine : repères & écarts ---- */
+    var repKeys = [["leg", "🥗 Légumes"], ["prot", "🍗 Protéines"], ["sanssucre", "🥤 Sans boisson sucrée"]];
+    var weekEc = ecartsWeekTotal();
+    h += '<div class="card"><div class="card-t"><h3>Cette semaine</h3>' +
+      '<span class="more">' + weekEc.length + ' écart' + (weekEc.length > 1 ? "s" : "") + ' · limite ' + tolSum() + '</span></div>' +
+      repKeys.map(function (k) {
+        var n = d7.filter(function (dt) { return repFor(dt)[k[0]]; }).length;
+        return '<div class="hist"><span class="d">' + k[1] + '</span><span>' + n + ' / 7 jours</span></div>';
+      }).join("");
+    if (weekEc.length) {
+      var byRef = {};
+      weekEc.forEach(function (e) { byRef[e.ref || e.nom] = (byRef[e.ref || e.nom] || 0) + 1; });
+      h += '<p class="mgroup">Écarts notés</p>' + Object.keys(byRef).map(function (kf) {
+        var itf = interditByRef(kf);
+        return '<div class="hist"><span class="d">' + esc(itf ? itf.nom : kf) + '</span><span>' + byRef[kf] + ' fois</span></div>';
+      }).join("");
+    }
+    h += '<p class="disclaimer" style="text-align:left;padding-top:10px">' + avoidMessage(weekEc.length, tolSum()) + '</p></div>';
+
     h += '<div class="card"><div class="card-t"><h3>Bilan de la semaine</h3></div>' + weeklyRecap() + '</div>';
 
     h += '<div class="card"><div class="card-t"><h3>Derniers jours</h3></div>' +
@@ -1316,6 +1561,18 @@ window.FOODS = [
     noted.forEach(function (k) { var t = totalsFor(k); kTotal += t.k; pTotal += t.p; });
     var avgK = r0(kTotal / noted.length), avgP = r0(pTotal / noted.length);
     var obj = targetKcal();
+    if (!isCalories()) {
+      var ec = ecartsWeekTotal().length;
+      var reps = lastDays(7).reduce(function (a, kk) {
+        var r = repFor(kk);
+        return a + ["leg", "prot", "sanssucre"].filter(function (x) { return r[x]; }).length;
+      }, 0);
+      return '<div style="display:grid;gap:8px;font-size:13.5px">' +
+        '<p>📅 <b>' + noted.length + ' jour' + (noted.length > 1 ? "s" : "") + ' sur 7</b> notés.</p>' +
+        '<p>🌿 <b>' + reps + ' repères</b> cochés sur 21 possibles.</p>' +
+        '<p>🚫 <b>' + ec + ' écart' + (ec > 1 ? "s" : "") + '</b> cette semaine (limite ' + tolSum() + ').</p>' +
+        '<p>' + (ec <= tolSum() ? "🌱 Semaine dans tes limites — continue comme ça." : "🤍 Un peu au-dessus, mais rien n'est perdu : on repart au prochain repas.") + '</p></div>';
+    }
     var w = weightsSorted();
     var delta = null;
     if (w.length >= 2) {
@@ -1361,13 +1618,40 @@ window.FOODS = [
       '<button class="btn ghost" data-act="saveTargets">Enregistrer</button>' +
       '<p class="disclaimer" style="text-align:left;padding-top:10px">Estimation automatique : ' + t.obj + ' kcal (métabolisme ' + t.mb + ' kcal de base + activité). Jamais moins de 1 200 kcal.</p></div>';
 
+    /* ---- mode de suivi ---- */
+    var mods = [
+      ["attention", "🌿 Au quotidien", "Tu notes ce que tu manges, sans compter les calories. Repères + à éviter."],
+      ["calories", "🔢 Calories", "Ajoute les kcal, l'objectif et les protéines si tu veux chiffrer."]
+    ];
+    h += '<div class="card"><div class="card-t"><h3>Mon suivi</h3></div>' +
+      '<div class="choices">' + mods.map(function (m) {
+        return '<button class="choice ' + (mode() === m[0] ? "on" : "") + '" data-act="setMode" data-mode="' + m[0] + '">' +
+          '<span><span class="t">' + m[1] + '</span><br><span class="d">' + m[2] + '</span></span></button>';
+      }).join("") + '</div></div>';
+
+    /* ---- mes à éviter ---- */
+    h += '<div class="card"><div class="card-t"><h3>Mes à éviter</h3><span class="more">' + S.interdits.length + ' · limite ' + tolSum() + '/sem.</span></div>' +
+      '<p class="sub" style="margin-bottom:6px">Ce que tu veux limiter. La limite est un repère, pas une interdiction : un dépassement ne casse rien.</p>';
+    S.interdits.forEach(function (it) {
+      h += '<div class="avoid-row"' + '>' +
+        '<span class="av-ico">' + it.emoji + '</span>' +
+        '<div class="av-body"><p class="av-nom">' + esc(it.nom) + '</p>' +
+        '<p class="av-sub">limite par semaine</p></div>' +
+        '<div class="tol"><button data-act="tol" data-id="' + it.id + '" data-d="-1" aria-label="Moins">−</button>' +
+        '<span>' + (+it.max || 0) + '</span>' +
+        '<button data-act="tol" data-id="' + it.id + '" data-d="1" aria-label="Plus">+</button></div>' +
+        '<button class="av-undo" data-act="delInterdit" data-id="' + it.id + '" aria-label="Supprimer">✕</button></div>';
+    });
+    h += '<div class="row2" style="margin-top:12px">' +
+      '<input class="input" id="new-interdit" type="text" placeholder="Ajouter (ex. chips)">' +
+      '<button class="btn" style="flex:0 0 auto;width:auto;padding:0 18px" data-act="addInterdit">+</button></div></div>';
+
+    /* ---- affichage ---- */
     h += '<div class="card"><div class="card-t"><h3>Affichage</h3></div>' +
-      '<div class="field"><label>Thème</label><div class="seg" id="st-theme">' +
+      '<div class="field" style="margin-bottom:0"><label>Thème</label><div class="seg" id="st-theme">' +
       [["auto", "Auto"], ["light", "Clair"], ["dark", "Sombre"]].map(function (o) {
         return '<button data-v="' + o[0] + '" class="' + (S.settings.theme === o[0] ? "on" : "") + '">' + o[1] + '</button>';
-      }).join("") + '</div></div>' +
-      '<div class="switch-row"><div class="lb">Mode simple<small>Masque les calories, affiche seulement les repas notés</small></div>' +
-      '<button class="sw' + (S.settings.modeSimple ? " on" : "") + '" data-act="toggleSimple" aria-label="Mode simple"></button></div></div>';
+      }).join("") + '</div></div></div>';
 
     h += '<div class="card"><div class="card-t"><h3>Rappels</h3></div>' +
       '<div class="switch-row"><div class="lb">Rappel quotidien iPhone<small>Chaque jour à 20 h : « noter mes repas »</small></div>' +
@@ -1424,8 +1708,11 @@ window.FOODS = [
       lines.push(m.ico + " " + m.nom + " : " + items.map(function (x) { return x.it.nom; }).join(", ") + " (" + r0(k) + " kcal)");
     });
     lines.push("");
-    lines.push("Total : " + tot.k + " / " + obj + " kcal");
-    lines.push("Eau : " + fr(r1(waterFor(d) * 0.2)) + " L");
+    if (isCalories()) lines.push("Total : " + tot.k + " / " + obj + " kcal");
+    var rep = repFor(d);
+    var rc = ["leg", "prot", "sanssucre"].filter(function (k) { return rep[k]; }).length;
+    lines.push("Repères : " + rc + "/3 · Eau : " + fr(r1(waterFor(d) * 0.2)) + " L");
+    lines.push("Écarts cette semaine : " + ecartsWeekTotal().length + " (limite " + tolSum() + ")");
     var st = streakNow();
     if (st > 0) lines.push("Série : " + st + " jours 🔥");
     var txt = lines.join("\n");
@@ -1570,11 +1857,74 @@ window.FOODS = [
         confirmAdd();
         break;
 
-      case "saveQuick":
-        var nom = (document.getElementById("q-nom") || {}).value || "";
-        var kc = parseFloat((document.getElementById("q-kcal") || {}).value || "0");
-        if (!nom.trim()) { toast("Donne un nom au repas"); return; }
-        addItem(sheet.moment, { fid: null, nom: nom.trim(), portion: "estimation", grammes: null, k: kc || 0, p: 0, g: 0, l: 0 });
+      case "saveNote":
+        var nom = ((document.getElementById("note-nom") || {}).value || "").trim();
+        if (!nom) { toast("Écris ce que tu as mangé"); return; }
+        var detected = detectInterdit(nom);
+        var isEc = !!sheet.ecart || !!detected;
+        var kc = parseFloat((document.getElementById("note-kcal") || {}).value || "0") || 0;
+        addFree(nom, sheet.niv || "normal", isEc, kc, detected ? detected.id : null);
+        break;
+
+      case "toggleEcart":
+        sheet.ecart = !sheet.ecart;
+        sheet.ecartManuel = sheet.ecart;
+        var chipE = document.getElementById("note-ecart");
+        if (chipE) {
+          chipE.textContent = sheet.ecart ? "✓ Compté comme un écart" : "Compter comme un écart";
+          chipE.style.background = sheet.ecart ? "var(--accent-soft)" : "";
+          chipE.style.borderColor = sheet.ecart ? "var(--accent)" : "";
+          chipE.style.color = sheet.ecart ? "var(--ink)" : "";
+        }
+        break;
+
+      case "rep":
+        toggleRep(todayKey(), el.dataset.k);
+        render();
+        break;
+
+      case "ecart":
+        var itv = interditByRef(el.dataset.id);
+        if (!itv) return;
+        addEcart(itv.nom, itv.id);
+        render();
+        toast("Noté. Un écart ne défait pas ta semaine 🌱");
+        break;
+
+      case "undoEcart":
+        var list = S.ecarts.filter(function (x) { return x.ref === el.dataset.id; });
+        if (!list.length) return;
+        var lastE = list[list.length - 1];
+        S.ecarts = S.ecarts.filter(function (x) { return x.id !== lastE.id; });
+        save(); render();
+        toast("Écart annulé");
+        break;
+
+      case "setMode":
+        S.profile.mode = el.dataset.mode;
+        save(); render();
+        toast(S.profile.mode === "calories" ? "Mode calories activé" : "Mode au quotidien activé");
+        break;
+
+      case "addInterdit":
+        var nInter = ((document.getElementById("new-interdit") || {}).value || "").trim();
+        if (!nInter) { toast("Écris ce que tu veux éviter"); return; }
+        S.interdits.push({ id: "perso-" + uid(), nom: nInter, emoji: "🚫", max: 1 });
+        save(); render();
+        toast("Ajouté à ta liste");
+        break;
+
+      case "delInterdit":
+        S.interdits = S.interdits.filter(function (i) { return i.id !== el.dataset.id; });
+        S.ecarts = S.ecarts.filter(function (e) { return e.ref !== el.dataset.id; });
+        save(); render();
+        break;
+
+      case "tol":
+        var itol = interditByRef(el.dataset.id);
+        if (!itol) return;
+        itol.max = Math.max(0, Math.min(14, (+itol.max || 0) + parseInt(el.dataset.d, 10)));
+        save(); render();
         break;
 
       case "copyYesterday":
