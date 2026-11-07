@@ -1,20 +1,13 @@
-/* EmmaFit — service worker (cache-first, hors-ligne complet) */
-const CACHE = "emmafit-v1.0.1";
-const ASSETS = [
-  "./",
-  "./index.html",
-  "./assets/styles.css",
-  "./assets/app.js",
-  "./assets/foods.js",
-  "./manifest.webmanifest",
-  "./icons/icon-180.png",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/favicon.svg"
-];
+/* EmmaFit — service worker (version fichier unique) */
+const CACHE = "emmafit-single-v1";
+const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE).then((c) =>
+      Promise.all(ASSETS.map((u) => c.add(u).catch(() => null)))
+    ).then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (e) => {
@@ -28,7 +21,6 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
-
   if (req.mode === "navigate") {
     e.respondWith(
       fetch(req).then((res) => {
@@ -39,7 +31,6 @@ self.addEventListener("fetch", (e) => {
     );
     return;
   }
-
   e.respondWith(
     caches.match(req).then((hit) => hit || fetch(req).then((res) => {
       const copy = res.clone();
