@@ -356,6 +356,27 @@ p { margin: 0; }
 }
 .tol span { min-width: 16px; text-align: center; font-size: 13px; font-weight: 650; }
 
+/* ---------- écran Mois ---------- */
+.mnav { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.mnav-b {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%; background: var(--card);
+  border: 1px solid var(--line); font-size: 20px; line-height: 1; color: var(--ink);
+  display: grid; place-items: center; box-shadow: var(--shadow);
+}
+.mnav-b[disabled] { opacity: .35; }
+.mnav-t { flex: 1 1 auto; text-align: center; font-size: 14px; font-weight: 620; color: var(--ink-soft); }
+.stat-grid .sv.down { color: var(--sage); }
+.stat-grid .sv.up { color: var(--amber); }
+.nbar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.nfill { height: 100%; border-radius: 99px; background: var(--sage); }
+.nutri-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+.nr-l { flex: 0 0 92px; font-size: 13.5px; }
+.nr-v { flex: 0 0 28px; text-align: right; font-size: 13.5px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.nr-bar { flex: 1 1 auto; height: 7px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.nr-bar > div { height: 100%; border-radius: 99px; background: var(--accent); opacity: .65; }
+.top .mnav { margin-bottom: 0; }
+.top .mnav-b { width: 36px; height: 36px; font-size: 18px; }
+
 </style>
 </head>
 <body>
@@ -626,9 +647,54 @@ window.FOODS = [
   /* ---------------- mode, repères, à éviter ---------------- */
   var NIVE = {
     leger: { ico: "🌿", nom: "Léger" },
-    normal: { ico: "🙂", nom: "Normal" },
+    sucre: { ico: "🍬", nom: "Sucré" },
+    gras: { ico: "🧈", nom: "Gras" },
+    deux: { ico: "🍰", nom: "Sucré et gras" },
+    normal: { ico: "", nom: "Normal" },
     genereux: { ico: "🍰", nom: "Généreux" }
   };
+
+  function isSweet(it) { return it.niv === "sucre" || it.niv === "deux"; }
+  function isFat(it) { return it.niv === "gras" || it.niv === "deux"; }
+  function niveauIco(it) {
+    if (it.niv === "sucre" || it.niv === "gras" || it.niv === "deux") return NIVE[it.niv].ico;
+    return "";
+  }
+
+  /* bilan sucre / gras sur les 7 derniers jours */
+  function weekNutri() {
+    var lim = addDays(todayKey(), -6), out = { repas: 0, sucre: 0, gras: 0, leger: 0 };
+    S.meals.forEach(function (m) {
+      if (m.date < lim) return;
+      (m.items || []).forEach(function (it) {
+        out.repas++;
+        if (isSweet(it)) out.sucre++;
+        if (isFat(it)) out.gras++;
+        if (it.niv === "leger") out.leger++;
+      });
+    });
+    return out;
+  }
+
+  /* suggestion « comme la dernière fois » pour un moment donné */
+  function suggestMeal(moment) {
+    if (itemsFor(todayKey(), moment).length) return null;
+    var lim = addDays(todayKey(), -21), groups = {};
+    S.meals.forEach(function (m) {
+      if (m.moment !== moment || m.date >= todayKey() || m.date < lim) return;
+      var key = (m.items || []).map(function (i) { return i.nom; }).join(" | ");
+      if (!key) return;
+      var g = groups[key] || (groups[key] = { items: m.items, count: 0, last: m.date });
+      g.count++;
+      if (m.date > g.last) g.last = m.date;
+    });
+    var best = null;
+    Object.keys(groups).forEach(function (k) {
+      var g = groups[k];
+      if (!best || g.count > best.count || (g.count === best.count && g.last > best.last)) best = g;
+    });
+    return best;
+  }
 
   function mode() { return S.profile.mode || "attention"; }
   function isCalories() { return mode() === "calories"; }
@@ -764,6 +830,8 @@ window.FOODS = [
   }
 
   var view = "home";
+  var sugHidden = {};
+  var monthView = todayKey().slice(0, 7);
 
   function render() {
     applyTheme();
@@ -774,6 +842,7 @@ window.FOODS = [
       return;
     }
     if (view === "home") app.innerHTML = viewHome();
+    else if (view === "month") app.innerHTML = viewMonth();
     else if (view === "progress") app.innerHTML = viewProgress();
     else app.innerHTML = viewSettings();
     renderTabbar();
@@ -783,6 +852,7 @@ window.FOODS = [
   function renderTabbar() {
     var tabs = [
       { id: "home", nom: "Aujourd'hui", path: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/>' },
+      { id: "month", nom: "Mois", path: '<rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M3.5 10h17"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M8 14h3"/><path d="M8 17.5h7"/>' },
       { id: "progress", nom: "Progrès", path: '<path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3.5-4 3 2.5L20 7"/>' },
       { id: "settings", nom: "Réglages", path: '<circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 2.6 14H2.5a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 7a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 2.6V2.5a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 17 4.6a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21.4 10v.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.9 1z"/>' }
     ];
@@ -947,7 +1017,8 @@ window.FOODS = [
     var cal = isCalories();
     var notedMeals = MOMENTS.filter(function (m) { return itemsFor(d, m.id).length > 0; }).length;
     var rep = repFor(d);
-    var repCount = ["leg", "prot", "sanssucre"].filter(function (k) { return rep[k]; }).length;
+    var REP_KEYS = [["leg", "🥗", "Légumes sur 2 repas"], ["sanssucre", "🥤", "Aucune boisson sucrée"]];
+    var repCount = REP_KEYS.filter(function (k) { return rep[k[0]]; }).length;
     var weekEc = ecartsWeekTotal();
     var msg = cal ? dayMessage(rest, obj, tot) : attentionMessage(notedMeals, repCount, weekEc.length);
 
@@ -964,8 +1035,8 @@ window.FOODS = [
       ringCenter = '<span class="big">' + notedMeals + '/4</span><span class="lbl">repas notés</span>';
       ringStats =
         '<div class="stat-line"><span>Repas notés</span><b>' + notedMeals + ' / 4</b></div>' +
-        '<div class="stat-line"><span>Repères</span><b>' + repCount + ' / 3</b></div>' +
-        '<div class="stat-line"><span>Écarts</span><b>' + weekEc.length + ' / ' + tolSum() + '</b></div>';
+        '<div class="stat-line"><span>Repères</span><b>' + repCount + ' / 2</b></div>' +
+        '<div class="stat-line"><span>Pièges</span><b>' + weekEc.length + ' / ' + tolSum() + '</b></div>';
     }
 
     var h = '' +
@@ -985,6 +1056,23 @@ window.FOODS = [
 
       '<div class="note-bar' + (msg.warm ? " warm" : "") + '"><span class="ico">' + msg.ico + '</span><span>' + msg.txt + '</span></div>';
 
+    /* ---- suggestion : le repas habituel ---- */
+    var sugMom = guessMoment();
+    var sug = sugHidden[sugMom] ? null : suggestMeal(sugMom);
+    if (sug) {
+      var momObj = MOMENTS.filter(function (m) { return m.id === sugMom; })[0];
+      h += '<div class="card" style="background:var(--sage-soft);box-shadow:none">' +
+        '<div class="card-t"><h3>Comme la dernière fois ?</h3><span class="more">' + sug.count + ' fois</span></div>' +
+        '<p class="sug-txt">' + sug.items.map(function (i) { return esc(i.nom); }).join(" · ") + '</p>' +
+        '<p class="sub" style="margin-bottom:12px">Un clic et ton ' + momObj.short.toLowerCase() + ' est noté.</p>' +
+        '<div class="row2"><button class="btn" data-act="applySuggest" data-moment="' + sugMom + '">Oui, c\'était ça</button>' +
+        '<button class="btn ghost" style="flex:0 0 40%" data-act="dismissSuggest" data-moment="' + sugMom + '">Non</button></div></div>';
+    }
+
+
+
+
+
     /* ---- mes repas ---- */
     h += '<div class="card" style="padding:14px 18px 6px">' +
       '<div class="card-t"><h3>Mes repas</h3>' +
@@ -994,7 +1082,8 @@ window.FOODS = [
       var k = items.reduce(function (a, x) { return a + (x.it.k || 0); }, 0);
       var detail = items.length
         ? items.map(function (x) {
-            return (x.it.ecart ? "🚫 " : "") + esc(x.it.nom);
+            var ic = niveauIco(x.it);
+            return (ic ? ic + " " : "") + esc(x.it.nom);
           }).join(" · ")
         : "Rien pour l'instant";
       h += '<div class="meal">' +
@@ -1010,17 +1099,16 @@ window.FOODS = [
     h += '</div>';
 
     /* ---- repères ---- */
-    h += '<div class="card"><div class="card-t"><h3>Mes repères du jour</h3><span class="more">' + repCount + '/3</span></div>' +
+    h += '<div class="card"><div class="card-t"><h3>Mes repères du jour</h3><span class="more">' + repCount + '/2</span></div>' +
       '<div class="reps">' +
-      repTile("leg", "🥗", "Légumes") +
-      repTile("prot", "🍗", "Protéines") +
-      repTile("sanssucre", "🥤", "Sans boisson sucrée") +
+      repTile("leg", "🥗", "Légumes sur 2 repas") +
+      repTile("sanssucre", "🥤", "Aucune boisson sucrée") +
       '</div>' +
-      '<p class="disclaimer" style="text-align:left;padding-top:10px">Trois repères simples valent mieux qu\'un calcul compliqué. Tu coches ce que tu as fait, sans pression.</p></div>';
+      '<p class="disclaimer" style="text-align:left;padding-top:10px">Deux repères, pas plus : c\'est par là que passent le moins de sucre et le moins de gras.</p></div>';
 
     /* ---- à éviter ---- */
-    h += '<div class="card"><div class="card-t"><h3>À éviter</h3>' +
-      '<span class="more">' + weekEc.length + ' cette semaine · limite ' + tolSum() + '</span></div>';
+    h += '<div class="card"><div class="card-t"><h3>Mes pièges</h3>' +
+      '<span class="more">' + weekEc.length + ' cette semaine · budget ' + tolSum() + '</span></div>';
     if (!S.interdits.length) {
       h += '<p class="empty">Ajoute ce que tu veux éviter dans les réglages.</p>';
     } else {
@@ -1030,7 +1118,7 @@ window.FOODS = [
         h += '<div class="avoid-row' + (over ? " over" : "") + '">' +
           '<span class="av-ico">' + it.emoji + '</span>' +
           '<div class="av-body"><p class="av-nom">' + esc(it.nom) + '</p>' +
-          '<p class="av-sub">' + (n === 0 ? "aucun" : n + " fois") + ' cette semaine · limite ' +
+          '<p class="av-sub">' + (n === 0 ? "aucun" : n + " fois") + ' cette semaine · budget ' +
           (+it.max === 0 ? "0 (jamais)" : it.max) + '</p></div>' +
           (n > 0 ? '<button class="av-undo" data-act="undoEcart" data-id="' + it.id + '" aria-label="Annuler le dernier">↺</button>' : '') +
           '<button class="av-add" data-act="ecart" data-id="' + it.id + '">+</button></div>';
@@ -1156,12 +1244,13 @@ window.FOODS = [
     return '' +
       '<p class="sub" style="margin:14px 0 6px">Qu\'est-ce que tu as mangé ?</p>' +
       '<input class="input" id="note-nom" type="text" placeholder="Ex. tajine de poulet, une part de msemen…" autocomplete="off" enterkeyhint="done">' +
-      '<p class="sub" style="margin:16px 0 8px">C\'était comment ?</p>' +
-      '<div class="seg" id="note-niv">' +
-      '<button data-v="leger" class="' + (sheet.niv === "leger" ? "on" : "") + '">🌿 Léger</button>' +
-      '<button data-v="normal" class="' + (sheet.niv === "normal" ? "on" : "") + '">🙂 Normal</button>' +
-      '<button data-v="genereux" class="' + (sheet.niv === "genereux" ? "on" : "") + '">🍰 Généreux</button>' +
+      '<p class="sub" style="margin:16px 0 8px">C\'était plutôt…</p>' +
+      '<div class="niv-grid" id="note-niv">' +
+      [["leger", "🌿 Léger"], ["sucre", "🍬 Sucré"], ["gras", "🧈 Gras"], ["deux", "🍰 Sucré et gras"]].map(function (o) {
+        return '<button data-v="' + o[0] + '" class="' + (sheet.niv === o[0] ? "on" : "") + '">' + o[1] + '</button>';
+      }).join("") +
       '</div>' +
+      '<p class="sub" style="margin-top:8px">Un repas « sucré » ou « gras », ce n\'est pas un problème : c\'est juste une info pour voir ta semaine.</p>' +
       '<button class="chip" id="note-ecart" data-act="toggleEcart" style="margin-top:14px' + (sheet.ecart ? ";background:var(--accent-soft);border-color:var(--accent);color:var(--ink)" : "") + '">' +
       (sheet.ecart ? "✓ Compté comme un écart" : "Compter comme un écart") + '</button>' +
       '<p class="sub" id="note-hint" style="margin-top:6px">' + (sheet.dpays ? "Reconnu dans « " + esc(sheet.dpays) + " »" : "Optionnel — coche si ça fait partie de ce que tu veux éviter.") + '</p>' +
@@ -1352,6 +1441,47 @@ window.FOODS = [
     var d = fromKey(m + "-01");
     return capitalize(d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" }));
   }
+  function shiftMonth(mk, n) {
+    var p = mk.split("-");
+    var d = new Date(+p[0], +p[1] - 1 + n, 1);
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1);
+  }
+  function monthKeyOf(dateKeyStr) { return (dateKeyStr || todayKey()).slice(0, 7); }
+  function monthDays(mk) {
+    var p = mk.split("-");
+    return new Date(+p[0], +p[1], 0).getDate();
+  }
+  function monthStats(mk) {
+    var out = {
+      month: mk, daysNoted: {}, mealEntries: 0,
+      nutri: { repas: 0, sucre: 0, gras: 0, leger: 0, deux: 0 },
+      ecarts: [], foods: {}, totalDays: monthDays(mk)
+    };
+    S.meals.forEach(function (m) {
+      if (monthKeyOf(m.date) !== mk) return;
+      out.daysNoted[m.date] = 1;
+      out.mealEntries++;
+      (m.items || []).forEach(function (it) {
+        out.nutri.repas++;
+        if (isSweet(it)) out.nutri.sucre++;
+        if (isFat(it)) out.nutri.gras++;
+        if (it.niv === "leger") out.nutri.leger++;
+        if (it.niv === "deux") out.nutri.deux++;
+        if (it.nom) {
+          var k = it.nom.trim().toLowerCase();
+          out.foods[k] = (out.foods[k] || 0) + 1;
+        }
+      });
+    });
+    out.ecarts = S.ecarts.filter(function (e) { return monthKeyOf(e.date) === mk; });
+    out.daysCount = Object.keys(out.daysNoted).length;
+    out.topFoods = Object.keys(out.foods)
+      .map(function (k) { return { nom: k, n: out.foods[k] }; })
+      .sort(function (a, b) { return b.n - a.n; })
+      .slice(0, 6);
+    return out;
+  }
+
   function monthGroups() {
     var w = weightsSorted(), g = {};
     w.forEach(function (x) {
@@ -1424,6 +1554,112 @@ window.FOODS = [
     s += '<text x="' + (W - pr) + '" y="' + (H - 6) + '" font-size="9" fill="var(--ink-soft)" text-anchor="end">' + shortDate(w[w.length - 1].date) + '</text>';
     s += '</svg>';
     return s;
+  }
+
+  function viewMonth() {
+    var mk = monthView;
+    var nowMk = todayKey().slice(0, 7);
+    var isCurrent = mk === nowMk;
+    var st = monthStats(mk);
+    var groups = monthGroups();
+    var gi = -1;
+    groups.forEach(function (g, i) { if (g.month === mk) gi = i; });
+    var g = gi >= 0 ? groups[gi] : null;
+    var prev = gi >= 0 && groups[gi + 1] ? groups[gi + 1] : null;
+    var delta = (g && prev) ? r1(g.avg - prev.avg) : null;
+    var nut = st.nutri;
+    var tot = Math.max(1, nut.repas);
+
+    var elapsed = isCurrent ? new Date().getDate() : st.totalDays;
+
+    var h = '<div class="top"><div><p class="hello">Ton mois</p>' +
+      '<h1 class="title">' + monthLabel(mk) + '</h1></div>' +
+      '<div class="mnav">' +
+      '<button class="mnav-b" data-act="monthPrev" aria-label="Mois précédent">‹</button>' +
+      '<button class="mnav-b" data-act="monthNext" aria-label="Mois suivant"' + (isCurrent ? " disabled" : "") + '>›</button>' +
+      '</div></div>';
+
+    /* poids */
+    h += '<div class="card"><div class="card-t"><h3>Mon poids</h3>' +
+      '<span class="more">' + (g ? g.n + ' pesée' + (g.n > 1 ? "s" : "") : "aucune pesée") + '</span></div>';
+    if (g) {
+      h += '<p class="big-num">' + one(g.avg) + ' <span style="font-size:15px;font-weight:500;color:var(--ink-soft)">kg en moyenne</span></p>' +
+        '<div class="stat-grid">' +
+        '<div><p class="sub">Début du mois</p><p class="sv">' + one(g.first) + ' kg</p></div>' +
+        '<div><p class="sub">Fin du mois</p><p class="sv">' + one(g.last) + ' kg</p></div>' +
+        '<div><p class="sub">Sur le mois</p><p class="sv ' + (g.last < g.first ? "down" : (g.last > g.first ? "up" : "")) + '">' +
+        (g.last === g.first ? "=" : (g.last < g.first ? "−" : "+") + one(Math.abs(r1(g.first - g.last))) + " kg") + '</p></div>' +
+        '<div><p class="sub">vs mois dernier</p><p class="sv ' + (delta === null ? "" : (delta < 0 ? "down" : (delta > 0 ? "up" : ""))) + '">' +
+        (delta === null ? "—" : (delta === 0 ? "=" : (delta < 0 ? "−" : "+") + one(Math.abs(delta)) + " kg")) + '</p></div>' +
+        '</div>';
+    } else {
+      h += '<p class="sub">Aucune pesée enregistrée en ' + monthLabel(mk).toLowerCase() + '. Une seule suffit pour avoir le mois dans ta courbe.</p>';
+    }
+    h += '<div class="kg-row" style="margin-top:14px">' +
+      '<input class="input" id="m-kg" type="number" inputmode="decimal" step="0.1" placeholder="Mon poids en kg">' +
+      '<button class="btn" data-act="saveMonthWeight">OK</button></div>' +
+      '<button class="link-mini" data-act="goProgress" style="margin-left:0;margin-top:8px">Voir toutes mes pesées →</button></div>';
+
+    /* ce qu'elle a mangé */
+    h += '<div class="card"><div class="card-t"><h3>Ce que j\'ai mangé</h3>' +
+      '<span class="more">' + st.daysCount + ' / ' + elapsed + ' jours</span></div>' +
+      '<div class="nbar"><div class="nfill" style="width:' + Math.round(st.daysCount / Math.max(1, elapsed) * 100) + '%"></div></div>' +
+      '<p class="sub" style="margin:8px 0 14px">' + (st.daysCount === 0 ? "Rien de noté ce mois-ci." :
+        st.daysCount + " jours notés sur " + elapsed + (isCurrent ? " écoulés" : "") + " · " + nut.repas + " repas au total.") + '</p>' +
+      '<div class="nutri-row"><span class="nr-l">🍬 Sucrés</span><span class="nr-v">' + nut.sucre + '</span>' +
+      '<div class="nr-bar"><div style="width:' + Math.round(nut.sucre / tot * 100) + '%"></div></div></div>' +
+      '<div class="nutri-row"><span class="nr-l">🧈 Gras</span><span class="nr-v">' + nut.gras + '</span>' +
+      '<div class="nr-bar"><div style="width:' + Math.round(nut.gras / tot * 100) + '%"></div></div></div>' +
+      '<div class="nutri-row"><span class="nr-l">🌿 Légers</span><span class="nr-v">' + nut.leger + '</span>' +
+      '<div class="nr-bar"><div style="width:' + Math.round(nut.leger / tot * 100) + '%"></div></div></div>' +
+      (nut.repas ? '<p class="disclaimer" style="text-align:left;padding-top:10px">' +
+        (nut.sucre + nut.gras <= nut.leger
+          ? "Majorité de repas légers ce mois-ci — c'est exactement le bon sens."
+          : "Beaucoup de repas sucrés ou gras ce mois-ci. Rien d'alarmant : c'est juste l'info qui te permet d'ajuster.") +
+        '</p>' : "") + '</div>';
+
+    /* pièges du mois */
+    h += '<div class="card"><div class="card-t"><h3>Mes pièges</h3>' +
+      '<span class="more">' + st.ecarts.length + ' ce mois · budget ~' + (tolSum() * 4) + '</span></div>';
+    if (!st.ecarts.length) {
+      h += '<p class="sub">Aucun piège noté en ' + monthLabel(mk).toLowerCase() + '.</p>';
+    } else {
+      var byRef = {};
+      st.ecarts.forEach(function (e) { var k = e.ref || e.nom; byRef[k] = (byRef[k] || 0) + 1; });
+      Object.keys(byRef).forEach(function (k) {
+        var itf = interditByRef(k);
+        h += '<div class="hist"><span class="d">' + (itf ? itf.emoji + " " + esc(itf.nom) : esc(k)) + '</span>' +
+          '<span>' + byRef[k] + ' fois</span></div>';
+      });
+    }
+    h += '</div>';
+
+    /* repas habituels */
+    if (st.topFoods.length) {
+      h += '<div class="card"><div class="card-t"><h3>Mes repas habituels</h3></div><div class="chips" style="flex-wrap:wrap;overflow:visible">' +
+        st.topFoods.map(function (f) {
+          return '<span class="chip" style="pointer-events:none">' + esc(f.nom) + ' · ' + f.n + '</span>';
+        }).join("") + '</div></div>';
+    }
+
+    /* bilan du mois */
+    var lines = [];
+    if (st.daysCount) {
+      lines.push("📅 Tu as noté <b>" + st.daysCount + " jours</b> sur " + elapsed + (isCurrent ? " écoulés" : "") + ".");
+      lines.push("🍽️ <b>" + nut.repas + " repas</b> notés — dont " + nut.sucre + " sucrés, " + nut.gras + " gras, " + nut.leger + " légers.");
+      if (st.ecarts.length) lines.push("🚫 <b>" + st.ecarts.length + " piège" + (st.ecarts.length > 1 ? "s" : "") + "</b> ce mois-ci (budget ~" + (tolSum() * 4) + ").");
+      if (g && prev) {
+        lines.push(delta < 0 ? "⚖️ <b>" + one(Math.abs(delta)) + " kg</b> de moins que le mois dernier en moyenne."
+          : (delta > 0 ? "⚖️ Poids stable ou en légère hausse — sans doute de l'eau, pas du gras en un mois." : "⚖️ Poids stable d'un mois sur l'autre."));
+      }
+    } else {
+      lines.push("🌱 Mois vide pour l'instant. Un seul repas noté suffit à démarrer.");
+    }
+    h += '<div class="card"><div class="card-t"><h3>Bilan du mois</h3></div>' +
+      '<div style="display:grid;gap:8px;font-size:13.5px">' +
+      lines.map(function (l) { return '<p>' + l + '</p>'; }).join("") + '</div></div>';
+
+    return h;
   }
 
   function viewProgress() {
@@ -1521,10 +1757,14 @@ window.FOODS = [
     h += '</div>';
 
     /* ---- cette semaine : repères & écarts ---- */
-    var repKeys = [["leg", "🥗 Légumes"], ["prot", "🍗 Protéines"], ["sanssucre", "🥤 Sans boisson sucrée"]];
+    var repKeys = [["leg", "🥗 Légumes (2 repas)"], ["sanssucre", "🥤 Sans boisson sucrée"]];
     var weekEc = ecartsWeekTotal();
+    var wn = weekNutri();
     h += '<div class="card"><div class="card-t"><h3>Cette semaine</h3>' +
       '<span class="more">' + weekEc.length + ' écart' + (weekEc.length > 1 ? "s" : "") + ' · limite ' + tolSum() + '</span></div>' +
+      '<div class="hist"><span class="d">🍬 Repas sucrés</span><span>' + wn.sucre + ' / ' + wn.repas + '</span></div>' +
+      '<div class="hist"><span class="d">🧈 Repas gras</span><span>' + wn.gras + ' / ' + wn.repas + '</span></div>' +
+      '<div class="hist"><span class="d">🌿 Repas légers</span><span>' + wn.leger + ' / ' + wn.repas + '</span></div>' +
       repKeys.map(function (k) {
         var n = d7.filter(function (dt) { return repFor(dt)[k[0]]; }).length;
         return '<div class="hist"><span class="d">' + k[1] + '</span><span>' + n + ' / 7 jours</span></div>';
@@ -1563,15 +1803,17 @@ window.FOODS = [
     var obj = targetKcal();
     if (!isCalories()) {
       var ec = ecartsWeekTotal().length;
+      var wn = weekNutri();
       var reps = lastDays(7).reduce(function (a, kk) {
         var r = repFor(kk);
-        return a + ["leg", "prot", "sanssucre"].filter(function (x) { return r[x]; }).length;
+        return a + ["leg", "sanssucre"].filter(function (x) { return r[x]; }).length;
       }, 0);
       return '<div style="display:grid;gap:8px;font-size:13.5px">' +
-        '<p>📅 <b>' + noted.length + ' jour' + (noted.length > 1 ? "s" : "") + ' sur 7</b> notés.</p>' +
-        '<p>🌿 <b>' + reps + ' repères</b> cochés sur 21 possibles.</p>' +
-        '<p>🚫 <b>' + ec + ' écart' + (ec > 1 ? "s" : "") + '</b> cette semaine (limite ' + tolSum() + ').</p>' +
-        '<p>' + (ec <= tolSum() ? "🌱 Semaine dans tes limites — continue comme ça." : "🤍 Un peu au-dessus, mais rien n'est perdu : on repart au prochain repas.") + '</p></div>';
+        '<p>📅 <b>' + noted.length + ' jour' + (noted.length > 1 ? "s" : "") + ' sur 7</b> notés · <b>' + wn.repas + ' repas</b>.</p>' +
+        '<p>🍬 <b>' + wn.sucre + ' repas sucré' + (wn.sucre > 1 ? "s" : "") + '</b> · 🧈 <b>' + wn.gras + ' gras</b> sur ' + wn.repas + '.</p>' +
+        '<p>🌿 <b>' + reps + ' repères</b> cochés sur 14 possibles.</p>' +
+        '<p>🚫 <b>' + ec + ' piège' + (ec > 1 ? "s" : "") + '</b> cette semaine (budget ' + tolSum() + ').</p>' +
+        '<p>' + (ec <= tolSum() ? "🌱 Semaine dans ton budget — continue comme ça." : "🤍 Un peu au-dessus du budget, mais rien n'est perdu : on repart au prochain repas.") + '</p></div>';
     }
     var w = weightsSorted();
     var delta = null;
@@ -1636,7 +1878,7 @@ window.FOODS = [
       h += '<div class="avoid-row"' + '>' +
         '<span class="av-ico">' + it.emoji + '</span>' +
         '<div class="av-body"><p class="av-nom">' + esc(it.nom) + '</p>' +
-        '<p class="av-sub">limite par semaine</p></div>' +
+        '<p class="av-sub">budget par semaine</p></div>' +
         '<div class="tol"><button data-act="tol" data-id="' + it.id + '" data-d="-1" aria-label="Moins">−</button>' +
         '<span>' + (+it.max || 0) + '</span>' +
         '<button data-act="tol" data-id="' + it.id + '" data-d="1" aria-label="Plus">+</button></div>' +
@@ -1654,7 +1896,7 @@ window.FOODS = [
       }).join("") + '</div></div></div>';
 
     h += '<div class="card"><div class="card-t"><h3>Rappels</h3></div>' +
-      '<div class="switch-row"><div class="lb">Rappel quotidien iPhone<small>Chaque jour à 20 h : « noter mes repas »</small></div>' +
+      '<div class="switch-row"><div class="lb">Rappels au moment des repas<small>12 h 30 et 20 h — c\'est là que ça marche</small></div>' +
       '<button class="btn small ghost" data-act="ics">.ics</button></div>' +
       '<div class="switch-row"><div class="lb">Rappel pesée mensuelle<small>Le 1<sup>er</sup> de chaque mois à 8 h</small></div>' +
       '<button class="btn small ghost" data-act="icsMonth">.ics</button></div>' +
@@ -1710,9 +1952,11 @@ window.FOODS = [
     lines.push("");
     if (isCalories()) lines.push("Total : " + tot.k + " / " + obj + " kcal");
     var rep = repFor(d);
-    var rc = ["leg", "prot", "sanssucre"].filter(function (k) { return rep[k]; }).length;
-    lines.push("Repères : " + rc + "/3 · Eau : " + fr(r1(waterFor(d) * 0.2)) + " L");
-    lines.push("Écarts cette semaine : " + ecartsWeekTotal().length + " (limite " + tolSum() + ")");
+    var rc = ["leg", "sanssucre"].filter(function (k) { return rep[k]; }).length;
+    lines.push("Repères : " + rc + "/2 · Eau : " + fr(r1(waterFor(d) * 0.2)) + " L");
+    var wnS = weekNutri();
+    lines.push("Cette semaine : " + wnS.repas + " repas · " + wnS.sucre + " sucrés · " + wnS.gras + " gras");
+    lines.push("Pièges cette semaine : " + ecartsWeekTotal().length + " (budget " + tolSum() + ")");
     var st = streakNow();
     if (st > 0) lines.push("Série : " + st + " jours 🔥");
     var txt = lines.join("\n");
@@ -1753,33 +1997,53 @@ window.FOODS = [
 
   function downloadICS(kind) {
     var monthly = kind === "month";
-    var d = new Date();
-    if (monthly) { d = new Date(d.getFullYear(), d.getMonth() + 1, 1); }
-    else { d.setDate(d.getDate() + 1); }
-    var stamp = dateKey(d).replace(/-/g, "") + (monthly ? "T080000" : "T200000");
-    var summary = monthly ? "EmmaFit — pesée du mois" : "EmmaFit — noter mes repas";
-    var desc = monthly ? "Note ton poids dans EmmaFit (une fois par mois suffit)." : "Un petit point sur la journée. 30 secondes suffisent.";
-    var rrule = monthly ? "RRULE:FREQ=MONTHLY" : "RRULE:FREQ=DAILY";
-    var ics = [
-      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//EmmaFit//Rappel//FR", "CALSCALE:GREGORIAN",
-      "BEGIN:VEVENT",
-      "UID:emmafit-rappel-" + Date.now() + "@emmafit",
-      "DTSTAMP:" + new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z",
-      "DTSTART:" + stamp,
-      "DTEND:" + dateKey(d).replace(/-/g, "") + (monthly ? "T081500" : "T201500"),
-      rrule,
-      "SUMMARY:" + summary,
-      "DESCRIPTION:" + desc,
-      "BEGIN:VALARM", "TRIGGER:PT0M", "ACTION:DISPLAY", "DESCRIPTION:" + summary, "END:VALARM",
-      "END:VEVENT", "END:VCALENDAR"
-    ].join("\r\n");
-    var blob = new Blob([ics], { type: "text/calendar" });
+    var now = new Date();
+    var stampZ = now.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+
+    var events;
+    if (monthly) {
+      var d0 = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      events = [{
+        day: dateKey(d0), start: "080000", end: "081500",
+        summary: "EmmaFit — pesée du mois",
+        desc: "Note ton poids dans EmmaFit (une fois par mois suffit).",
+        rrule: "RRULE:FREQ=MONTHLY"
+      }];
+    } else {
+      var tomorrow = addDays(todayKey(), 1);
+      events = [
+        { day: tomorrow, start: "123000", end: "124500", summary: "EmmaFit — noter le déjeuner", desc: "Tu viens de manger ? 10 secondes et c'est noté.", rrule: "RRULE:FREQ=DAILY" },
+        { day: tomorrow, start: "200000", end: "201500", summary: "EmmaFit — noter le dîner", desc: "Un petit point sur la journée, sans jugement.", rrule: "RRULE:FREQ=DAILY" }
+      ];
+    }
+
+    var lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//EmmaFit//Rappels//FR", "CALSCALE:GREGORIAN"];
+    events.forEach(function (ev, i) {
+      lines.push("BEGIN:VEVENT");
+      lines.push("UID:emmafit-" + (monthly ? "pesee" : "repas-" + i) + "-" + now.getTime() + "@emmafit");
+      lines.push("DTSTAMP:" + stampZ);
+      lines.push("DTSTART:" + ev.day.replace(/-/g, "") + "T" + ev.start);
+      lines.push("DTEND:" + ev.day.replace(/-/g, "") + "T" + ev.end);
+      lines.push(ev.rrule);
+      lines.push("SUMMARY:" + ev.summary);
+      lines.push("DESCRIPTION:" + ev.desc);
+      lines.push("BEGIN:VALARM");
+      lines.push("TRIGGER:PT0M");
+      lines.push("ACTION:DISPLAY");
+      lines.push("DESCRIPTION:" + ev.summary);
+      lines.push("END:VALARM");
+      lines.push("END:VEVENT");
+    });
+    lines.push("END:VCALENDAR");
+
+    var blob = new Blob([lines.join("\r\n")], { type: "text/calendar" });
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");
-    a.href = url; a.download = monthly ? "emmafit-rappel-pesee-mensuelle.ics" : "emmafit-rappel.ics";
+    a.href = url;
+    a.download = monthly ? "emmafit-rappel-pesee-mensuelle.ics" : "emmafit-rappels-repas.ics";
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
-    toast(monthly ? "Rappel mensuel téléchargé 🗓️" : "Rappel téléchargé — ouvre-le pour l'ajouter au Calendrier");
+    toast(monthly ? "Rappel mensuel téléchargé 🗓️" : "2 rappels ajoutés (12 h 30 et 20 h)");
   }
 
   function resetAll() {
@@ -1880,6 +2144,50 @@ window.FOODS = [
 
       case "rep":
         toggleRep(todayKey(), el.dataset.k);
+        render();
+        break;
+
+      case "monthPrev":
+        monthView = shiftMonth(monthView, -1);
+        render(); window.scrollTo(0, 0);
+        break;
+
+      case "monthNext":
+        var nextMk = shiftMonth(monthView, 1);
+        if (nextMk <= todayKey().slice(0, 7)) { monthView = nextMk; render(); window.scrollTo(0, 0); }
+        break;
+
+      case "goProgress":
+        view = "progress"; render(); window.scrollTo(0, 0);
+        break;
+
+      case "saveMonthWeight":
+        var mv = parseFloat(((document.getElementById("m-kg") || {}).value || "").replace(",", "."));
+        if (!mv || mv < 25 || mv > 250) { toast("Indique un poids valide"); return; }
+        var mkNow = todayKey().slice(0, 7);
+        var mDate = (monthView === mkNow) ? todayKey() : monthView + "-" + pad(monthDays(monthView));
+        var exM = S.weights.filter(function (x) { return x.date === mDate; })[0];
+        if (exM) exM.kg = mv; else S.weights.push({ date: mDate, kg: mv });
+        S.weights.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+        S.profile.poids = +weightsSorted()[weightsSorted().length - 1].kg;
+        save(); render();
+        toast("Poids de " + monthLabel(monthView).toLowerCase() + " enregistré ⚖️");
+        break;
+
+      case "applySuggest":
+        var sm = el.dataset.moment;
+        var sg = suggestMeal(sm);
+        if (!sg) return;
+        sg.items.forEach(function (it) {
+          S.meals.push({ id: uid(), date: todayKey(), moment: sm, items: [it], ts: Date.now() });
+        });
+        touchStreak(todayKey());
+        save(); render();
+        toast("Noté ✓ — ajuste si ce n'était pas exactement ça");
+        break;
+
+      case "dismissSuggest":
+        sugHidden[el.dataset.moment] = true;
         render();
         break;
 
@@ -2045,8 +2353,25 @@ window.FOODS = [
     }
   });
 
+  /* ---------------- lien profond (#add) ---------------- */
+  function handleHash() {
+    var h = location.hash || "";
+    if (h.indexOf("#add") !== 0) return;
+    if (!S.profile.onboarding) return;
+    var m = h.match(/add=([a-z]+)/i);
+    var mom = guessMoment();
+    if (m) {
+      var ok = MOMENTS.some(function (x) { return x.id === m[1]; });
+      if (ok) mom = m[1];
+    }
+    openAdd(mom);
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) { }
+  }
+
   /* ---------------- démarrage ---------------- */
   render();
+  handleHash();
+  window.addEventListener("hashchange", handleHash);
   setInterval(function () {
     // changement de jour à minuit : on rafraîchit l'écran d'accueil
     if (view === "home" && app.dataset.day !== todayKey()) {
