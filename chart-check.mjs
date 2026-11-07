@@ -1,0 +1,23 @@
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const { chromium, devices } = require("/home/user/.tools/node_modules/playwright");
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ ...devices["iPhone 13"], locale: "fr-FR" });
+const page = await ctx.newPage();
+await page.goto("http://localhost:8080/", { waitUntil: "networkidle" });
+await page.fill("#ob-prenom", "Emma");
+await page.fill("#ob-poids", "74");
+await page.click('[data-act="start"]');
+await page.evaluate(() => {
+  const S = JSON.parse(localStorage.getItem("emmafit.v1"));
+  const base = new Date(); const kgs = [74, 74.2, 73.8, 73.9, 73.5, 73.6, 73.2, 73.3, 72.9, 72.7, 72.8, 72.4];
+  S.weights = kgs.map((kg, i) => { const d = new Date(base); d.setDate(d.getDate() - (kgs.length - 1 - i) * 3); return { date: d.toISOString().slice(0, 10), kg }; });
+  localStorage.setItem("emmafit.v1", JSON.stringify(S));
+});
+await page.reload({ waitUntil: "networkidle" });
+await page.click('[data-act="tab"][data-view="progress"]');
+await page.waitForTimeout(400);
+await page.locator("#chart-box").screenshot({ path: "/home/user/shots/chart.png" });
+const box = await page.locator("svg.chart").boundingBox();
+console.log("taille du svg :", box);
+await browser.close();
