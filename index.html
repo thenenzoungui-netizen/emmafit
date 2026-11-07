@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>EmmaFit</title>
+  <meta name="description" content="EmmaFit — ton carnet alimentaire simple, doux et hors-ligne.">
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="EmmaFit">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="theme-color" content="#fbf7f2" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1c1917" media="(prefers-color-scheme: dark)">
+
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/icon-180.png">
+  <link rel="icon" href="./icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body>
+  <main id="app" aria-live="polite"></main>
+  <nav id="tabbar" class="tabbar hidden" aria-label="Navigation"></nav>
+  <div id="sheet-root"></div>
+  <div class="toast" id="toast" role="status"></div>
+
+  <script src="./assets/foods.js"></script>
+  <script src="./assets/app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("./sw.js").catch(function () {});
+      });
+    }
+  </script>
+</body>
+</html>
